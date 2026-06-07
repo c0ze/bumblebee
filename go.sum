@@ -1,5 +1,7 @@
 github.com/go-chi/chi/v5 v5.3.0 h1:halUjDxhshgXHMrao5bB8eNBXo/rnzwr8m5m36glehM=
 github.com/go-chi/chi/v5 v5.3.0/go.mod h1:R+tYY2hNuVUUjxoPtqUdgBqevM9s9njzkTLutVsOCto=
+github.com/sunicy/go-lame v0.0.0-20200422031049-1c192eaafa39 h1:P/6L4pZMkHutxyefALLAiXCPkcD+5NcvJRGayZmtBmY=
+github.com/sunicy/go-lame v0.0.0-20200422031049-1c192eaafa39/go.mod h1:H5mJP3sFKpUGaeckgSaMVXcTgnSgImhx54qyQXbpTVY=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
