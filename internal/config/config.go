@@ -44,8 +44,9 @@ func (b *Bytes) UnmarshalYAML(value *yaml.Node) error {
 
 func parseBytes(s string) (int64, error) {
 	s = strings.TrimSpace(s)
+	// KB/MB/GB are interpreted as binary (1024) units.
 	mult := int64(1)
-	for suffix, m := range map[string]int64{"KB": 1_000, "MB": 1_000_000, "GB": 1_000_000_000} {
+	for suffix, m := range map[string]int64{"KB": 1 << 10, "MB": 1 << 20, "GB": 1 << 30} {
 		if strings.HasSuffix(s, suffix) {
 			mult = m
 			s = strings.TrimSpace(strings.TrimSuffix(s, suffix))
@@ -136,7 +137,7 @@ func (c *Config) defaults() {
 		c.Cache.DefaultBackend = "memory"
 	}
 	if c.Cache.Memory.MaxBytes == 0 {
-		c.Cache.Memory.MaxBytes = Bytes(512_000_000)
+		c.Cache.Memory.MaxBytes = Bytes(512 << 20) // 512 MiB
 	}
 	for i := range c.Routes {
 		r := &c.Routes[i]

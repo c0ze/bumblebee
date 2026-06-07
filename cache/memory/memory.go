@@ -29,6 +29,14 @@ type getResp struct {
 	hit  bool
 }
 
+type putResp struct {
+	err error
+}
+type putReq struct {
+	req  cache.PutReq
+	resp chan putResp
+}
+
 // Store is a byte-bounded LRU cache owned by a single goroutine.
 type Store struct {
 	maxBytes int64
@@ -39,7 +47,7 @@ type Store struct {
 	misses   int64
 
 	getCh   chan getReq
-	putCh   chan cache.PutReq
+	putCh   chan putReq
 	purgeCh chan string
 	snapCh  chan chan cache.Stats
 	quit    chan struct{}
@@ -52,7 +60,7 @@ func New(maxBytes int64) *Store {
 		items:    map[cache.Key]*entry{},
 		lru:      list.New(),
 		getCh:    make(chan getReq),
-		putCh:    make(chan cache.PutReq),
+		putCh:    make(chan putReq),
 		purgeCh:  make(chan string),
 		snapCh:   make(chan chan cache.Stats),
 		quit:     make(chan struct{}),
@@ -69,7 +77,7 @@ func (s *Store) loop() {
 		case r := <-s.getCh:
 			r.resp <- s.get(r.key)
 		case p := <-s.putCh:
-			s.put(p)
+			p.resp <- putResp{err: s.put(p.req)}
 		case route := <-s.purgeCh:
 			s.purge(route)
 		case ch := <-s.snapCh:
@@ -98,10 +106,10 @@ func (s *Store) get(k cache.Key) getResp {
 	return getResp{data: e.data, ct: e.ct, hit: true}
 }
 
-func (s *Store) put(p cache.PutReq) {
+func (s *Store) put(p cache.PutReq) error {
 	data, err := io.ReadAll(p.Data)
 	if err != nil {
-		return
+		return err
 	}
 	if old, ok := s.items[p.Key]; ok {
 		s.remove(old)
@@ -114,6 +122,7 @@ func (s *Store) put(p cache.PutReq) {
 	s.items[p.Key] = e
 	s.curBytes += e.size
 	s.evict()
+	return nil
 }
 
 func (s *Store) evict() {
@@ -139,19 +148,27 @@ func (s *Store) purge(route string) {
 		s.curBytes = 0
 		return
 	}
+	var toRemove []*entry
 	for _, e := range s.items {
 		if e.route == route {
-			s.remove(e)
+			toRemove = append(toRemove, e)
 		}
+	}
+	for _, e := range toRemove {
+		s.remove(e)
 	}
 }
 
 func (s *Store) sweep() {
 	now := time.Now()
+	var toRemove []*entry
 	for _, e := range s.items {
 		if !e.expires.IsZero() && now.After(e.expires) {
-			s.remove(e)
+			toRemove = append(toRemove, e)
 		}
+	}
+	for _, e := range toRemove {
+		s.remove(e)
 	}
 }
 
@@ -166,10 +183,14 @@ func (s *Store) Get(k cache.Key) (io.ReadCloser, cache.Meta, bool) {
 	return io.NopCloser(bytes.NewReader(r.data)), cache.Meta{ContentType: r.ct, Size: int64(len(r.data))}, true
 }
 
-func (s *Store) Put(r cache.PutReq) error { s.putCh <- r; return nil }
-func (s *Store) Purge(route string)       { s.purgeCh <- route }
-func (s *Store) Snapshot() cache.Stats    { ch := make(chan cache.Stats); s.snapCh <- ch; return <-ch }
-func (s *Store) Close()                   { close(s.quit) }
+func (s *Store) Put(r cache.PutReq) error {
+	resp := make(chan putResp)
+	s.putCh <- putReq{req: r, resp: resp}
+	return (<-resp).err
+}
+func (s *Store) Purge(route string)    { s.purgeCh <- route }
+func (s *Store) Snapshot() cache.Stats { ch := make(chan cache.Stats); s.snapCh <- ch; return <-ch }
+func (s *Store) Close()                { close(s.quit) }
 
 // Compile-time interface check.
 var _ cache.Store = (*Store)(nil)

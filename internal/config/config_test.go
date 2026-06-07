@@ -53,8 +53,8 @@ func TestLoadValid(t *testing.T) {
 	if cfg.Server.Addr != ":9090" || cfg.Server.AuthToken != "secret" {
 		t.Fatalf("server: %+v", cfg.Server)
 	}
-	if int64(cfg.Cache.Memory.MaxBytes) != 1_000_000 {
-		t.Fatalf("max_bytes: %d", cfg.Cache.Memory.MaxBytes)
+	if int64(cfg.Cache.Memory.MaxBytes) != 1<<20 {
+		t.Fatalf("max_bytes: %d (want %d)", cfg.Cache.Memory.MaxBytes, int64(1<<20))
 	}
 	r := cfg.Routes[0]
 	if r.Path != "/tts" || len(r.Upstream.Pool) != 2 || time.Duration(r.Upstream.Timeout) != 30*time.Second {

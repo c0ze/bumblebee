@@ -35,17 +35,22 @@ func main() {
 
 	srv := &http.Server{Addr: cfg.Server.Addr, Handler: handler}
 
+	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("bumblebee %s listening on %s", version, cfg.Server.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("listen: %v", err)
+			errCh <- err
 		}
 	}()
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
-	log.Println("shutting down...")
+	select {
+	case <-stop:
+		log.Println("shutting down...")
+	case err := <-errCh:
+		log.Printf("listen: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

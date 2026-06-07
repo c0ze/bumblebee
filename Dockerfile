@@ -14,7 +14,10 @@ RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o /out/bumbleb
 FROM alpine:3.20
 RUN apk --no-cache add ca-certificates
 WORKDIR /app
+RUN addgroup -S bumblebee && adduser -S -G bumblebee bumblebee
 COPY --from=build /out/bumblebee /usr/local/bin/bumblebee
 COPY examples/passthrough.yaml /app/config.yaml
+RUN chown -R bumblebee:bumblebee /app
+USER bumblebee
 EXPOSE 8080
 ENTRYPOINT ["bumblebee", "-config", "/app/config.yaml"]
