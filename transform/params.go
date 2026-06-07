@@ -2,6 +2,7 @@ package transform
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -17,9 +18,15 @@ func (p Params) Int(key string, def int) int {
 	case int:
 		return n
 	case int64:
+		if n < math.MinInt || n > math.MaxInt {
+			return def
+		}
 		return int(n)
 	case float64:
-		return int(n)
+		if math.IsNaN(n) || math.IsInf(n, 0) || n < math.MinInt || n > math.MaxInt {
+			return def
+		}
+		return int(math.Round(n))
 	case string:
 		if i, err := strconv.Atoi(strings.TrimSpace(n)); err == nil {
 			return i
@@ -50,7 +57,12 @@ func (p Params) Bool(key string, def bool) bool {
 	case bool:
 		return b
 	case string:
-		return b == "true" || b == "1"
+		switch strings.ToLower(strings.TrimSpace(b)) {
+		case "true", "1", "yes", "on":
+			return true
+		case "false", "0", "no", "off":
+			return false
+		}
 	}
 	return def
 }

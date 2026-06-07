@@ -12,5 +12,5 @@ require (
 require (
 	github.com/disintegration/imaging v1.6.2 // indirect
 	github.com/sunicy/go-lame v0.0.0-20200422031049-1c192eaafa39 // indirect
-	golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8 // indirect
+	golang.org/x/image v0.41.0 // indirect
 )
