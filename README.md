@@ -27,8 +27,9 @@ Each route in the config declares:
 - a **cache** policy — a byte-bounded LRU with TTL; the key is derived from the
   route, selected headers/query params, the effective transform params, and the
   request body;
-- a **transform pipeline** — an ordered list of steps (`passthrough` today;
-  `lame`, `image`, and `video` next), each tunable per request.
+- a **transform pipeline** — an ordered list of steps (`passthrough`, `lame`
+  (PCM→MP3, audio), and `image` (resize/recompress); `video` next), each tunable
+  per request.
 
 ### Race-free by construction
 
@@ -89,6 +90,15 @@ The toolchain is pinned with [mise](https://mise.jdx.dev) (`mise.toml`):
 mise install                    # install the pinned Go toolchain
 mise exec -- go test -race ./...
 ```
+
+The `lame` transformer links **libmp3lame** (CGo); the `image`/`passthrough`
+transformers are pure-Go. To build with audio support:
+
+- **macOS:** `brew install lame`, then point cgo at it:
+  `export CGO_CFLAGS="-I$(brew --prefix lame)/include" CGO_LDFLAGS="-L$(brew --prefix lame)/lib"`
+- **Debian/Ubuntu:** `apt-get install -y libmp3lame-dev` (standard paths)
+
+Then build with `CGO_ENABLED=1`.
 
 ## License
 

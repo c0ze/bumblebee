@@ -1,0 +1,21 @@
+server:
+  addr: ":8080"
+cache:
+  default_backend: memory
+  memory: { max_bytes: 512MB }
+routes:
+  - path: /img/*
+    upstream:
+      method: GET
+      url: "https://origin.example.com/{path}"
+      pool: ["origin.example.com"]
+      forward_query: [w, h]
+      timeout: 30s
+    cache:
+      backend: memory
+      ttl: 168h
+      key_query: [w, h, fmt, q]
+    pipeline:
+      - type: image
+        params: { format: jpeg, max_width: 1200, quality: 82 }
+        overrides: { max_width: w, max_height: h, quality: q, format: fmt }
