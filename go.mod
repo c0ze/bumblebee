@@ -9,4 +9,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/sunicy/go-lame v0.0.0-20200422031049-1c192eaafa39 // indirect
+require (
+	github.com/disintegration/imaging v1.6.2 // indirect
+	github.com/sunicy/go-lame v0.0.0-20200422031049-1c192eaafa39 // indirect
+	golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8 // indirect
+)
