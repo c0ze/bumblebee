@@ -81,6 +81,15 @@ docker build -t bumblebee . && docker run -p 8080:8080 bumblebee
 
 Every proxied response carries `X-Cache: HIT` or `X-Cache: MISS`.
 
+## Development
+
+The toolchain is pinned with [mise](https://mise.jdx.dev) (`mise.toml`):
+
+```sh
+mise install                    # install the pinned Go toolchain
+mise exec -- go test -race ./...
+```
+
 ## License
 
 MIT © 2026 Arda Karaduman
