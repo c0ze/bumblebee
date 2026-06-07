@@ -1,0 +1,13 @@
+# Compiled binary
+/bumblebee
+/bbee
+
+# Go build/test artifacts
+*.out
+*.test
+
+# Local execution workspaces
+.worktrees/
+
+# Editor/OS noise
+.DS_Store
