@@ -1,0 +1,23 @@
+server:
+  addr: ":8080"
+cache:
+  default_backend: memory
+  memory: { max_bytes: 256MB }
+routes:
+  - path: /tts
+    upstream:
+      method: POST
+      url: "http://{host}:5002/synthesize"
+      pool: ["tts-a", "tts-b"]
+      forward_body: true
+      forward_headers: [X-Voice]
+      timeout: 60s
+      retries: 1
+    cache:
+      backend: memory
+      ttl: 24h
+      key_headers: [X-Voice, X-Quality, X-Sample-Rate]   # override-driven headers, in the cache key
+    pipeline:
+      - type: lame
+        params: { sample_rate: 16000, quality: 5, channels: 1, in_big_endian: false }
+        overrides: { quality: X-Quality, sample_rate: X-Sample-Rate }

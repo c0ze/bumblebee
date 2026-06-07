@@ -14,6 +14,8 @@ import (
 	"github.com/c0ze/bumblebee/internal/router"
 
 	// Register the transformers this binary ships.
+	_ "github.com/c0ze/bumblebee/transform/image"
+	_ "github.com/c0ze/bumblebee/transform/lame"
 	_ "github.com/c0ze/bumblebee/transform/passthrough"
 )
 
