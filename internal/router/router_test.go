@@ -1,6 +1,10 @@
 package router_test
 
 import (
+	"bytes"
+	"image"
+	_ "image/jpeg"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +13,7 @@ import (
 
 	"github.com/c0ze/bumblebee/internal/config"
 	"github.com/c0ze/bumblebee/internal/router"
+	_ "github.com/c0ze/bumblebee/transform/image"
 	_ "github.com/c0ze/bumblebee/transform/passthrough"
 )
 
@@ -171,5 +176,66 @@ func TestStatsAuth(t *testing.T) {
 	body, _ := io.ReadAll(resp2.Body)
 	if !strings.Contains(string(body), "\"build_version\"") {
 		t.Fatalf("stats body missing build_version: %s", body)
+	}
+}
+
+func pngBytes(w, h int) []byte {
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, img)
+	return buf.Bytes()
+}
+
+func TestTransformParamAffectsOutputAndCacheKey(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Write(pngBytes(200, 160))
+	}))
+	defer origin.Close()
+
+	cfg := &config.Config{
+		Server: config.ServerConfig{Addr: ":0"},
+		Cache:  config.CacheConfig{DefaultBackend: "memory"},
+		Routes: []config.RouteConfig{{
+			Path:     "/img/*",
+			Upstream: config.UpstreamConfig{Method: "GET", URL: origin.URL + "/{path}", Pool: []string{"o"}},
+			Cache:    config.RouteCache{Backend: "memory", KeyQuery: []string{"w"}},
+			Pipeline: []config.StageConfig{{
+				Type:      "image",
+				Params:    map[string]any{"format": "jpeg", "quality": 82},
+				Overrides: map[string]string{"max_width": "w"},
+			}},
+		}},
+	}
+	cfg.Cache.Memory.MaxBytes = 1 << 20
+	h, cleanup, err := router.New(cfg, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(h)
+	defer func() { ts.Close(); cleanup() }()
+
+	widthOf := func(url string) (int, string) {
+		resp, err := http.Get(url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		ic, _, err := image.DecodeConfig(bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("not an image: %v", err)
+		}
+		return ic.Width, resp.Header.Get("X-Cache")
+	}
+
+	if wpx, xc := widthOf(ts.URL + "/img/a?w=50"); wpx != 50 || xc != "MISS" {
+		t.Fatalf("w=50: width=%d cache=%s", wpx, xc)
+	}
+	if wpx, xc := widthOf(ts.URL + "/img/a?w=50"); wpx != 50 || xc != "HIT" {
+		t.Fatalf("w=50 repeat: width=%d cache=%s", wpx, xc)
+	}
+	if wpx, xc := widthOf(ts.URL + "/img/a?w=80"); wpx != 80 || xc != "MISS" {
+		t.Fatalf("w=80: width=%d cache=%s", wpx, xc)
 	}
 }
