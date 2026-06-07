@@ -1,0 +1,17 @@
+server:
+  addr: ":8080"
+cache:
+  default_backend: memory
+  memory: { max_bytes: 128MB }
+routes:
+  - path: /proxy/*
+    upstream:
+      method: GET
+      url: "https://httpbingo.org/{path}"
+      pool: ["httpbingo.org"]
+    cache:
+      backend: memory
+      ttl: 1h
+      key_query: [show_env]
+    pipeline:
+      - type: passthrough
