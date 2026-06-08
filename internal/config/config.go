@@ -190,6 +190,9 @@ func (c *Config) validate() error {
 		default:
 			return fmt.Errorf("route %s: unsupported cache backend %q (memory, disk)", r.Path, r.Cache.Backend)
 		}
+		if r.Upstream.Health.FailThreshold > 0 && r.Upstream.Health.Cooldown <= 0 {
+			return fmt.Errorf("route %s: upstream.health.cooldown is required when fail_threshold is set", r.Path)
+		}
 	}
 	return nil
 }

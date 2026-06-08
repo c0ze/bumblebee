@@ -37,7 +37,7 @@ func TestPassiveHealthMarksDownAndRecovers(t *testing.T) {
 	}
 	// After cooldown it is eligible again.
 	time.Sleep(70 * time.Millisecond)
-	if st := p.Snapshot(); st[0].State != "UP" {
+	if st := p.Snapshot(); len(st) != 1 || st[0].State != "UP" {
 		t.Fatalf("host should recover to UP after cooldown, got %s", st[0].State)
 	}
 }
