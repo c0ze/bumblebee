@@ -228,6 +228,37 @@ func TestDiskBackedRoute(t *testing.T) {
 	}
 }
 
+func TestReadyEndpoint(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }))
+	defer origin.Close()
+	cfg := &config.Config{
+		Server: config.ServerConfig{Addr: ":0"},
+		Cache:  config.CacheConfig{DefaultBackend: "memory"},
+		Routes: []config.RouteConfig{{
+			Path:     "/r/*",
+			Upstream: config.UpstreamConfig{Method: "GET", URL: origin.URL + "/{path}", Pool: []string{"o"}},
+			Cache:    config.RouteCache{Backend: "memory"},
+			Pipeline: []config.StageConfig{{Type: "passthrough"}},
+		}},
+	}
+	cfg.Cache.Memory.MaxBytes = 1 << 20
+	h, cleanup, err := router.New(cfg, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(h)
+	defer func() { ts.Close(); cleanup() }()
+
+	resp, err := http.Get(ts.URL + "/ready")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("ready: want 200, got %d", resp.StatusCode)
+	}
+}
+
 func pngBytes(w, h int) []byte {
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	var buf bytes.Buffer

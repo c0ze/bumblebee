@@ -74,6 +74,7 @@ func New(cfg *config.Config, version string) (http.Handler, func(), error) {
 
 	r := chi.NewRouter()
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	r.Get("/ready", s.handleReady)
 	r.Get("/stats", s.auth(s.handleStats))
 	r.Post("/cache/purge", s.auth(s.handlePurge))
 
@@ -265,6 +266,16 @@ type statsResp struct {
 	BuildVersion string                         `json:"build_version"`
 	Cache        cache.Stats                    `json:"cache"`
 	Routes       map[string][]upstream.HostStat `json:"routes"`
+}
+
+func (s *server) handleReady(w http.ResponseWriter, _ *http.Request) {
+	for _, rt := range s.routes {
+		if !rt.pool.Ready() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *server) handleStats(w http.ResponseWriter, _ *http.Request) {

@@ -64,10 +64,11 @@ type Pool struct {
 	cooldown      time.Duration
 	client        *http.Client
 
-	jobs chan *Job
-	outs chan outcome
-	snap chan chan []HostStat
-	quit chan struct{}
+	jobs    chan *Job
+	outs    chan outcome
+	snap    chan chan []HostStat
+	readyCh chan chan bool
+	quit    chan struct{}
 }
 
 var errNoHost = errors.New("no upstream host available")
@@ -87,6 +88,7 @@ func New(name string, hostNames []string, timeout time.Duration, retries, maxInf
 		jobs:          make(chan *Job),
 		outs:          make(chan outcome),
 		snap:          make(chan chan []HostStat),
+		readyCh:       make(chan chan bool),
 		quit:          make(chan struct{}),
 	}
 	for _, n := range hostNames {
@@ -105,6 +107,8 @@ func (p *Pool) loop() {
 			p.handle(o)
 		case ch := <-p.snap:
 			ch <- p.stats()
+		case ch := <-p.readyCh:
+			ch <- p.ready()
 		case <-p.quit:
 			return
 		}
@@ -205,6 +209,19 @@ func (p *Pool) Do(j *Job) Result {
 
 // Snapshot returns per-host stats computed inside the owner goroutine.
 func (p *Pool) Snapshot() []HostStat { ch := make(chan []HostStat); p.snap <- ch; return <-ch }
+
+func (p *Pool) ready() bool {
+	now := time.Now()
+	for _, h := range p.hosts {
+		if now.After(h.downUntil) {
+			return true
+		}
+	}
+	return false
+}
+
+// Ready reports whether at least one host is currently eligible.
+func (p *Pool) Ready() bool { ch := make(chan bool); p.readyCh <- ch; return <-ch }
 
 // Close stops the pool goroutine.
 func (p *Pool) Close() { close(p.quit) }
