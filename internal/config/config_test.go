@@ -98,3 +98,41 @@ routes:
 		t.Fatalf("want 30s default timeout, got %v", time.Duration(cfg.Routes[0].Upstream.Timeout))
 	}
 }
+
+func TestDiskBackendConfig(t *testing.T) {
+	body := `
+cache:
+  default_backend: memory
+  memory: { max_bytes: 1MB }
+  disk: { dir: /tmp/bb-cache, max_bytes: 2GB }
+routes:
+  - path: /v/*
+    upstream: { url: "http://o/{path}", pool: [a] }
+    cache: { backend: disk, ttl: 1h }
+    pipeline: [{ type: passthrough }]
+`
+	cfg, err := config.Load(write(t, body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Cache.Disk.Dir != "/tmp/bb-cache" || int64(cfg.Cache.Disk.MaxBytes) != 2<<30 {
+		t.Fatalf("disk cfg: %+v", cfg.Cache.Disk)
+	}
+	if cfg.Routes[0].Cache.Backend != "disk" {
+		t.Fatalf("backend: %s", cfg.Routes[0].Cache.Backend)
+	}
+}
+
+func TestDiskBackendRequiresDir(t *testing.T) {
+	body := `
+cache: { default_backend: memory, memory: { max_bytes: 1MB } }
+routes:
+  - path: /v/*
+    upstream: { url: "http://o/{path}", pool: [a] }
+    cache: { backend: disk, ttl: 1h }
+    pipeline: [{ type: passthrough }]
+`
+	if _, err := config.Load(write(t, body)); err == nil {
+		t.Fatal("expected error: disk backend without cache.disk.dir")
+	}
+}
