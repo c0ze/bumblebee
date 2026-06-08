@@ -40,6 +40,7 @@ type server struct {
 	version string
 	token   string
 	mem     *memory.Store
+	dsk     *disk.Store
 	routes  []*route
 }
 
@@ -108,6 +109,7 @@ func New(cfg *config.Config, version string) (http.Handler, func(), error) {
 		s.routes = append(s.routes, rt)
 		r.Method(rc.Upstream.Method, rc.Path, rt.handler(s))
 	}
+	s.dsk = dsk
 	return r, cleanup, nil
 }
 
@@ -264,7 +266,7 @@ func (s *server) auth(next http.HandlerFunc) http.HandlerFunc {
 
 type statsResp struct {
 	BuildVersion string                         `json:"build_version"`
-	Cache        cache.Stats                    `json:"cache"`
+	Caches       []cache.Stats                  `json:"caches"`
 	Routes       map[string][]upstream.HostStat `json:"routes"`
 }
 
@@ -279,11 +281,10 @@ func (s *server) handleReady(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *server) handleStats(w http.ResponseWriter, _ *http.Request) {
-	// NOTE: stats currently reflect the in-memory cache only (disk-store stats are a later plan).
-	resp := statsResp{
-		BuildVersion: s.version,
-		Cache:        s.mem.Snapshot(),
-		Routes:       map[string][]upstream.HostStat{},
+	resp := statsResp{BuildVersion: s.version, Routes: map[string][]upstream.HostStat{}}
+	resp.Caches = append(resp.Caches, s.mem.Snapshot())
+	if s.dsk != nil {
+		resp.Caches = append(resp.Caches, s.dsk.Snapshot())
 	}
 	for _, rt := range s.routes {
 		resp.Routes[rt.path] = rt.pool.Snapshot()
@@ -293,8 +294,11 @@ func (s *server) handleStats(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *server) handlePurge(w http.ResponseWriter, r *http.Request) {
-	// disk-store purge is a later plan
-	s.mem.Purge(r.URL.Query().Get("route"))
+	route := r.URL.Query().Get("route")
+	s.mem.Purge(route)
+	if s.dsk != nil {
+		s.dsk.Purge(route)
+	}
 	w.WriteHeader(http.StatusOK)
 }
 

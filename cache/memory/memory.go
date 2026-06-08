@@ -39,12 +39,13 @@ type putReq struct {
 
 // Store is a byte-bounded LRU cache owned by a single goroutine.
 type Store struct {
-	maxBytes int64
-	curBytes int64
-	items    map[cache.Key]*entry
-	lru      *list.List // front = most recent
-	hits     int64
-	misses   int64
+	maxBytes   int64
+	curBytes   int64
+	items      map[cache.Key]*entry
+	lru        *list.List // front = most recent
+	hits       int64
+	misses     int64
+	sweepEvery time.Duration
 
 	getCh   chan getReq
 	putCh   chan putReq
@@ -53,24 +54,32 @@ type Store struct {
 	quit    chan struct{}
 }
 
+func newStore(maxBytes int64) *Store {
+	return &Store{
+		maxBytes: maxBytes, sweepEvery: time.Minute,
+		items: map[cache.Key]*entry{}, lru: list.New(),
+		getCh: make(chan getReq), putCh: make(chan putReq),
+		purgeCh: make(chan string), snapCh: make(chan chan cache.Stats),
+		quit: make(chan struct{}),
+	}
+}
+
 // New starts a memory store bounded to maxBytes total payload.
 func New(maxBytes int64) *Store {
-	s := &Store{
-		maxBytes: maxBytes,
-		items:    map[cache.Key]*entry{},
-		lru:      list.New(),
-		getCh:    make(chan getReq),
-		putCh:    make(chan putReq),
-		purgeCh:  make(chan string),
-		snapCh:   make(chan chan cache.Stats),
-		quit:     make(chan struct{}),
-	}
+	s := newStore(maxBytes)
+	go s.loop()
+	return s
+}
+
+func newForTest(maxBytes int64, sweep time.Duration) *Store {
+	s := newStore(maxBytes)
+	s.sweepEvery = sweep
 	go s.loop()
 	return s
 }
 
 func (s *Store) loop() {
-	tick := time.NewTicker(time.Minute)
+	tick := time.NewTicker(s.sweepEvery)
 	defer tick.Stop()
 	for {
 		select {
@@ -81,7 +90,7 @@ func (s *Store) loop() {
 		case route := <-s.purgeCh:
 			s.purge(route)
 		case ch := <-s.snapCh:
-			ch <- cache.Stats{Entries: len(s.items), Bytes: s.curBytes, Hits: s.hits, Misses: s.misses}
+			ch <- s.statsSnapshot("memory")
 		case <-tick.C:
 			s.sweep()
 		case <-s.quit:
@@ -172,6 +181,17 @@ func (s *Store) sweep() {
 	}
 }
 
+func (s *Store) statsSnapshot(backend string) cache.Stats {
+	byRoute := map[string]cache.RouteStat{}
+	for _, e := range s.items {
+		r := byRoute[e.route]
+		r.Entries++
+		r.Bytes += e.size
+		byRoute[e.route] = r
+	}
+	return cache.Stats{Backend: backend, Entries: len(s.items), Bytes: s.curBytes, Hits: s.hits, Misses: s.misses, ByRoute: byRoute}
+}
+
 // Get implements cache.Store. The returned reader streams immutable bytes.
 func (s *Store) Get(k cache.Key) (io.ReadCloser, cache.Meta, bool) {
 	resp := make(chan getResp)
@@ -190,7 +210,9 @@ func (s *Store) Put(r cache.PutReq) error {
 }
 func (s *Store) Purge(route string)    { s.purgeCh <- route }
 func (s *Store) Snapshot() cache.Stats { ch := make(chan cache.Stats); s.snapCh <- ch; return <-ch }
-func (s *Store) Close()                { close(s.quit) }
+
+// Close stops the owner goroutine. The store must not be used afterward.
+func (s *Store) Close() { close(s.quit) }
 
 // Compile-time interface check.
 var _ cache.Store = (*Store)(nil)
