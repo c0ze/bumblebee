@@ -179,6 +179,55 @@ func TestStatsAuth(t *testing.T) {
 	}
 }
 
+func TestDiskBackedRoute(t *testing.T) {
+	var calls int
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "text/plain")
+		io.WriteString(w, "diskpayload")
+	}))
+	defer origin.Close()
+
+	cfg := &config.Config{
+		Server: config.ServerConfig{Addr: ":0"},
+		Cache:  config.CacheConfig{DefaultBackend: "memory"},
+		Routes: []config.RouteConfig{{
+			Path:     "/d/*",
+			Upstream: config.UpstreamConfig{Method: "GET", URL: origin.URL + "/{path}", Pool: []string{"o"}},
+			Cache:    config.RouteCache{Backend: "disk"},
+			Pipeline: []config.StageConfig{{Type: "passthrough"}},
+		}},
+	}
+	cfg.Cache.Memory.MaxBytes = 1 << 20
+	cfg.Cache.Disk.Dir = t.TempDir()
+	cfg.Cache.Disk.MaxBytes = 1 << 20
+	h, cleanup, err := router.New(cfg, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(h)
+	defer func() { ts.Close(); cleanup() }()
+
+	get := func() (string, string) {
+		resp, err := http.Get(ts.URL + "/d/a")
+		if err != nil {
+			t.Fatalf("GET /d/a: %v", err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return string(b), resp.Header.Get("X-Cache")
+	}
+	if b, xc := get(); b != "diskpayload" || xc != "MISS" {
+		t.Fatalf("first: %q %s", b, xc)
+	}
+	if b, xc := get(); b != "diskpayload" || xc != "HIT" {
+		t.Fatalf("second: %q %s", b, xc)
+	}
+	if calls != 1 {
+		t.Fatalf("origin called %d times, want 1 (disk cache HIT)", calls)
+	}
+}
+
 func pngBytes(w, h int) []byte {
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	var buf bytes.Buffer

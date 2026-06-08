@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/c0ze/bumblebee/cache"
+	"github.com/c0ze/bumblebee/cache/disk"
 	"github.com/c0ze/bumblebee/cache/memory"
 	"github.com/c0ze/bumblebee/internal/config"
 	"github.com/c0ze/bumblebee/transform"
@@ -31,19 +33,44 @@ type route struct {
 	pool        *upstream.Pool
 	pipeline    *transform.Pipeline
 	store       cache.Store
+	streaming   bool
 }
 
 type server struct {
 	version string
 	token   string
-	store   *memory.Store
+	mem     *memory.Store
 	routes  []*route
 }
 
 // New builds an http.Handler from config and returns a cleanup func.
 func New(cfg *config.Config, version string) (http.Handler, func(), error) {
-	store := memory.New(int64(cfg.Cache.Memory.MaxBytes))
-	s := &server{version: version, token: cfg.Server.AuthToken, store: store}
+	mem := memory.New(int64(cfg.Cache.Memory.MaxBytes))
+	var dsk *disk.Store
+	s := &server{version: version, token: cfg.Server.AuthToken, mem: mem}
+
+	getStore := func(backend string) (cache.Store, bool, error) {
+		if backend == "disk" {
+			if dsk == nil {
+				d, err := disk.New(cfg.Cache.Disk.Dir, int64(cfg.Cache.Disk.MaxBytes))
+				if err != nil {
+					return nil, false, err
+				}
+				dsk = d
+			}
+			return dsk, true, nil
+		}
+		return mem, false, nil
+	}
+	cleanup := func() {
+		for _, rt := range s.routes {
+			rt.pool.Close()
+		}
+		mem.Close()
+		if dsk != nil {
+			dsk.Close()
+		}
+	}
 
 	r := chi.NewRouter()
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -54,10 +81,12 @@ func New(cfg *config.Config, version string) (http.Handler, func(), error) {
 		rc := cfg.Routes[i]
 		pipe, err := transform.Build(toStages(rc.Pipeline))
 		if err != nil {
-			for _, rt := range s.routes {
-				rt.pool.Close()
-			}
-			store.Close()
+			cleanup()
+			return nil, nil, err
+		}
+		store, streaming, err := getStore(rc.Cache.Backend)
+		if err != nil {
+			cleanup()
 			return nil, nil, err
 		}
 		rt := &route{
@@ -73,16 +102,10 @@ func New(cfg *config.Config, version string) (http.Handler, func(), error) {
 			pool:        upstream.New(rc.Path, rc.Upstream.Pool, time.Duration(rc.Upstream.Timeout), rc.Upstream.Retries, rc.Upstream.MaxInflight),
 			pipeline:    pipe,
 			store:       store,
+			streaming:   streaming,
 		}
 		s.routes = append(s.routes, rt)
 		r.Method(rc.Upstream.Method, rc.Path, rt.handler(s))
-	}
-
-	cleanup := func() {
-		for _, rt := range s.routes {
-			rt.pool.Close()
-		}
-		store.Close()
 	}
 	return r, cleanup, nil
 }
@@ -161,6 +184,37 @@ func (rt *route) handler(s *server) http.HandlerFunc {
 			return
 		}
 
+		if rt.streaming {
+			tmp, err := os.CreateTemp("", "bumblebee-out-*")
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			defer os.Remove(tmp.Name())
+			defer tmp.Close()
+			ct, err := rt.pipeline.Run(ctx, res.Resp.Body, tmp, eff)
+			if err != nil {
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			if ct == "" {
+				ct = res.Resp.Header.Get("Content-Type")
+			}
+			if _, err := tmp.Seek(0, io.SeekStart); err == nil {
+				_ = rt.store.Put(cache.PutReq{Key: key, Route: rt.path, ContentType: ct, TTL: rt.ttl, Data: tmp})
+			}
+			if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("X-Cache", "MISS")
+			if ct != "" {
+				w.Header().Set("Content-Type", ct)
+			}
+			io.Copy(w, tmp)
+			return
+		}
+
 		var out bytes.Buffer
 		ct, err := rt.pipeline.Run(ctx, res.Resp.Body, &out, eff)
 		if err != nil {
@@ -216,7 +270,7 @@ type statsResp struct {
 func (s *server) handleStats(w http.ResponseWriter, _ *http.Request) {
 	resp := statsResp{
 		BuildVersion: s.version,
-		Cache:        s.store.Snapshot(),
+		Cache:        s.mem.Snapshot(),
 		Routes:       map[string][]upstream.HostStat{},
 	}
 	for _, rt := range s.routes {
@@ -227,7 +281,8 @@ func (s *server) handleStats(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *server) handlePurge(w http.ResponseWriter, r *http.Request) {
-	s.store.Purge(r.URL.Query().Get("route"))
+	// disk-store purge is a later plan
+	s.mem.Purge(r.URL.Query().Get("route"))
 	w.WriteHeader(http.StatusOK)
 }
 
