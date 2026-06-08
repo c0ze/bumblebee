@@ -228,6 +228,75 @@ func TestDiskBackedRoute(t *testing.T) {
 	}
 }
 
+func TestReadyEndpoint(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }))
+	defer origin.Close()
+	cfg := &config.Config{
+		Server: config.ServerConfig{Addr: ":0"},
+		Cache:  config.CacheConfig{DefaultBackend: "memory"},
+		Routes: []config.RouteConfig{{
+			Path:     "/r/*",
+			Upstream: config.UpstreamConfig{Method: "GET", URL: origin.URL + "/{path}", Pool: []string{"o"}},
+			Cache:    config.RouteCache{Backend: "memory"},
+			Pipeline: []config.StageConfig{{Type: "passthrough"}},
+		}},
+	}
+	cfg.Cache.Memory.MaxBytes = 1 << 20
+	h, cleanup, err := router.New(cfg, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(h)
+	defer func() { ts.Close(); cleanup() }()
+
+	resp, err := http.Get(ts.URL + "/ready")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("ready: want 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestStatsIncludesBothBackends(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "x") }))
+	defer origin.Close()
+	cfg := &config.Config{
+		Server: config.ServerConfig{Addr: ":0"},
+		Cache:  config.CacheConfig{DefaultBackend: "memory"},
+		Routes: []config.RouteConfig{
+			{Path: "/m/*", Upstream: config.UpstreamConfig{Method: "GET", URL: origin.URL + "/{path}", Pool: []string{"o"}}, Cache: config.RouteCache{Backend: "memory"}, Pipeline: []config.StageConfig{{Type: "passthrough"}}},
+			{Path: "/d/*", Upstream: config.UpstreamConfig{Method: "GET", URL: origin.URL + "/{path}", Pool: []string{"o"}}, Cache: config.RouteCache{Backend: "disk"}, Pipeline: []config.StageConfig{{Type: "passthrough"}}},
+		},
+	}
+	cfg.Cache.Memory.MaxBytes = 1 << 20
+	cfg.Cache.Disk.Dir = t.TempDir()
+	cfg.Cache.Disk.MaxBytes = 1 << 20
+	h, cleanup, err := router.New(cfg, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(h)
+	defer func() { ts.Close(); cleanup() }()
+
+	if r, _ := http.Get(ts.URL + "/m/a"); r != nil {
+		r.Body.Close()
+	}
+	if r, _ := http.Get(ts.URL + "/d/a"); r != nil {
+		r.Body.Close()
+	}
+	resp, err := http.Get(ts.URL + "/stats")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if s := string(body); !strings.Contains(s, "\"backend\":\"memory\"") || !strings.Contains(s, "\"backend\":\"disk\"") {
+		t.Fatalf("stats missing a backend: %s", s)
+	}
+}
+
 func pngBytes(w, h int) []byte {
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	var buf bytes.Buffer

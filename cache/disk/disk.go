@@ -134,7 +134,7 @@ func (s *Store) loop() {
 		case route := <-s.purgeCh:
 			s.purge(route)
 		case ch := <-s.snapCh:
-			ch <- cache.Stats{Entries: len(s.items), Bytes: s.curBytes, Hits: s.hits, Misses: s.misses}
+			ch <- s.statsSnapshot("disk")
 		case <-tick.C:
 			s.sweep()
 		case <-s.quit:
@@ -229,6 +229,17 @@ func (s *Store) sweep() {
 	for _, e := range toRemove {
 		s.remove(e)
 	}
+}
+
+func (s *Store) statsSnapshot(backend string) cache.Stats {
+	byRoute := map[string]cache.RouteStat{}
+	for _, e := range s.items {
+		r := byRoute[e.meta.Route]
+		r.Entries++
+		r.Bytes += e.meta.Size
+		byRoute[e.meta.Route] = r
+	}
+	return cache.Stats{Backend: backend, Entries: len(s.items), Bytes: s.curBytes, Hits: s.hits, Misses: s.misses, ByRoute: byRoute}
 }
 
 // Get implements cache.Store.

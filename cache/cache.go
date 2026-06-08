@@ -23,12 +23,20 @@ type PutReq struct {
 	Data        io.Reader
 }
 
-// Stats is a snapshot of a store's state.
-type Stats struct {
+// RouteStat is a per-route breakdown within a cache snapshot.
+type RouteStat struct {
 	Entries int   `json:"entries"`
 	Bytes   int64 `json:"bytes"`
-	Hits    int64 `json:"hits"`
-	Misses  int64 `json:"misses"`
+}
+
+// Stats is a snapshot of a store's state.
+type Stats struct {
+	Backend string               `json:"backend,omitempty"`
+	Entries int                  `json:"entries"`
+	Bytes   int64                `json:"bytes"`
+	Hits    int64                `json:"hits"`
+	Misses  int64                `json:"misses"`
+	ByRoute map[string]RouteStat `json:"by_route,omitempty"`
 }
 
 // Store is a content-addressed object cache. Implementations must be safe for

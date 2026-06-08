@@ -26,7 +26,7 @@ func TestRoundRobin(t *testing.T) {
 	defer sa.Close()
 	defer sb.Close()
 
-	p := upstream.New("t", []string{sa.URL, sb.URL}, 2*time.Second, 0, 0)
+	p := upstream.New("t", []string{sa.URL, sb.URL}, 2*time.Second, 0, 0, 0, 0)
 	defer p.Close()
 	for i := 0; i < 4; i++ {
 		res := p.Do(&upstream.Job{BuildReq: buildFor("GET", "")})
@@ -46,7 +46,7 @@ func TestRetryNextOnTransportError(t *testing.T) {
 	dead := "http://127.0.0.1:1" // connection refused
 
 	// dead first, good second, retries=1 -> should succeed on good.
-	p := upstream.New("t", []string{dead, good.URL}, 2*time.Second, 1, 0)
+	p := upstream.New("t", []string{dead, good.URL}, 2*time.Second, 1, 0, 0, 0)
 	defer p.Close()
 	res := p.Do(&upstream.Job{BuildReq: buildFor("GET", "")})
 	if res.Err != nil {
@@ -58,7 +58,7 @@ func TestRetryNextOnTransportError(t *testing.T) {
 func TestTimeoutClassified504(t *testing.T) {
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { time.Sleep(200 * time.Millisecond) }))
 	defer slow.Close()
-	p := upstream.New("t", []string{slow.URL}, 50*time.Millisecond, 0, 0)
+	p := upstream.New("t", []string{slow.URL}, 50*time.Millisecond, 0, 0, 0, 0)
 	defer p.Close()
 	res := p.Do(&upstream.Job{BuildReq: buildFor("GET", "")})
 	if res.Err == nil || res.Status != http.StatusGatewayTimeout {

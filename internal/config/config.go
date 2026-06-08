@@ -100,6 +100,10 @@ type UpstreamConfig struct {
 	Timeout        Duration `yaml:"timeout"`
 	Retries        int      `yaml:"retries"`
 	MaxInflight    int      `yaml:"max_inflight"`
+	Health         struct {
+		FailThreshold int      `yaml:"fail_threshold"`
+		Cooldown      Duration `yaml:"cooldown"`
+	} `yaml:"health"`
 }
 
 type RouteCache struct {
@@ -185,6 +189,9 @@ func (c *Config) validate() error {
 			}
 		default:
 			return fmt.Errorf("route %s: unsupported cache backend %q (memory, disk)", r.Path, r.Cache.Backend)
+		}
+		if r.Upstream.Health.FailThreshold > 0 && r.Upstream.Health.Cooldown <= 0 {
+			return fmt.Errorf("route %s: upstream.health.cooldown is required when fail_threshold is set", r.Path)
 		}
 	}
 	return nil

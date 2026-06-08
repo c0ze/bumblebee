@@ -103,7 +103,6 @@ Then build with `CGO_ENABLED=1`.
 The `video` transformer requires **ffmpeg** at runtime (`brew install ffmpeg` /
 `apt-get install ffmpeg`). Disk-backed routes (`cache.backend: disk`) stream
 large outputs through temp files instead of buffering them in memory.
-Currently `/stats` and `/cache/purge` operate on the in-memory cache only.
 
 ## License
 

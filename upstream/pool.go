@@ -23,6 +23,7 @@ type Job struct {
 // HostStat is a per-host snapshot for /stats.
 type HostStat struct {
 	Name       string    `json:"host"`
+	State      string    `json:"state"`
 	LastStatus int       `json:"last_status"`
 	OK         int64     `json:"ok"`
 	Errors     int64     `json:"errors"`
@@ -36,6 +37,8 @@ type host struct {
 	lastStatus int
 	ok         int64
 	errs       int64
+	failStreak int
+	downUntil  time.Time
 }
 
 type attempt struct {
@@ -52,35 +55,41 @@ type outcome struct {
 
 // Pool is a round-robin upstream host pool owned by a single goroutine.
 type Pool struct {
-	name        string
-	hosts       []*host
-	next        int
-	retries     int
-	maxInflight int
-	client      *http.Client
+	name          string
+	hosts         []*host
+	next          int
+	retries       int
+	maxInflight   int
+	failThreshold int
+	cooldown      time.Duration
+	client        *http.Client
 
-	jobs chan *Job
-	outs chan outcome
-	snap chan chan []HostStat
-	quit chan struct{}
+	jobs    chan *Job
+	outs    chan outcome
+	snap    chan chan []HostStat
+	readyCh chan chan bool
+	quit    chan struct{}
 }
 
 var errNoHost = errors.New("no upstream host available")
 
-// New starts a pool. maxInflight <= 0 means unbounded.
-func New(name string, hostNames []string, timeout time.Duration, retries, maxInflight int) *Pool {
+// New starts a pool. maxInflight <= 0 means unbounded. failThreshold <= 0 disables passive health.
+func New(name string, hostNames []string, timeout time.Duration, retries, maxInflight, failThreshold int, cooldown time.Duration) *Pool {
 	if maxInflight <= 0 {
 		maxInflight = 1 << 30
 	}
 	p := &Pool{
-		name:        name,
-		retries:     retries,
-		maxInflight: maxInflight,
-		client:      &http.Client{Timeout: timeout},
-		jobs:        make(chan *Job),
-		outs:        make(chan outcome),
-		snap:        make(chan chan []HostStat),
-		quit:        make(chan struct{}),
+		name:          name,
+		retries:       retries,
+		maxInflight:   maxInflight,
+		failThreshold: failThreshold,
+		cooldown:      cooldown,
+		client:        &http.Client{Timeout: timeout},
+		jobs:          make(chan *Job),
+		outs:          make(chan outcome),
+		snap:          make(chan chan []HostStat),
+		readyCh:       make(chan chan bool),
+		quit:          make(chan struct{}),
 	}
 	for _, n := range hostNames {
 		p.hosts = append(p.hosts, &host{name: n})
@@ -98,6 +107,8 @@ func (p *Pool) loop() {
 			p.handle(o)
 		case ch := <-p.snap:
 			ch <- p.stats()
+		case ch := <-p.readyCh:
+			ch <- p.ready()
 		case <-p.quit:
 			return
 		}
@@ -109,7 +120,7 @@ func (p *Pool) pick() *host {
 	for i := 0; i < n; i++ {
 		h := p.hosts[p.next%n]
 		p.next++
-		if h.inflight < p.maxInflight {
+		if h.inflight < p.maxInflight && time.Now().After(h.downUntil) {
 			return h
 		}
 	}
@@ -149,6 +160,10 @@ func (p *Pool) handle(o outcome) {
 		status := classify(o.err)
 		h.errs++
 		h.lastStatus = status
+		h.failStreak++
+		if p.failThreshold > 0 && h.failStreak >= p.failThreshold {
+			h.downUntil = time.Now().Add(p.cooldown)
+		}
 		if o.at.tries > 0 {
 			o.at.tries--
 			p.dispatch(o.at)
@@ -159,13 +174,20 @@ func (p *Pool) handle(o outcome) {
 	}
 	h.ok++
 	h.lastStatus = o.resp.StatusCode
+	h.failStreak = 0
+	h.downUntil = time.Time{}
 	o.at.job.result <- Result{Resp: o.resp}
 }
 
 func (p *Pool) stats() []HostStat {
+	now := time.Now()
 	out := make([]HostStat, 0, len(p.hosts))
 	for _, h := range p.hosts {
-		out = append(out, HostStat{Name: h.name, LastStatus: h.lastStatus, OK: h.ok, Errors: h.errs, LastAccess: h.last})
+		state := "UP"
+		if now.Before(h.downUntil) {
+			state = "DOWN"
+		}
+		out = append(out, HostStat{Name: h.name, State: state, LastStatus: h.lastStatus, OK: h.ok, Errors: h.errs, LastAccess: h.last})
 	}
 	return out
 }
@@ -187,6 +209,19 @@ func (p *Pool) Do(j *Job) Result {
 
 // Snapshot returns per-host stats computed inside the owner goroutine.
 func (p *Pool) Snapshot() []HostStat { ch := make(chan []HostStat); p.snap <- ch; return <-ch }
+
+func (p *Pool) ready() bool {
+	now := time.Now()
+	for _, h := range p.hosts {
+		if now.After(h.downUntil) {
+			return true
+		}
+	}
+	return false
+}
+
+// Ready reports whether at least one host is currently eligible.
+func (p *Pool) Ready() bool { ch := make(chan bool); p.readyCh <- ch; return <-ch }
 
 // Close stops the pool goroutine.
 func (p *Pool) Close() { close(p.quit) }
