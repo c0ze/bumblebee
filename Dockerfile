@@ -11,7 +11,7 @@ RUN CGO_ENABLED=1 go build -ldflags "-X main.version=${VERSION}" -o /out/bumbleb
 
 # Run stage
 FROM alpine:3.20
-RUN apk --no-cache add ca-certificates lame-libs
+RUN apk --no-cache add ca-certificates lame-libs ffmpeg
 WORKDIR /app
 RUN addgroup -S bumblebee && adduser -S -G bumblebee bumblebee
 COPY --from=build /out/bumblebee /usr/local/bin/bumblebee
