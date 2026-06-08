@@ -77,6 +77,10 @@ type CacheConfig struct {
 	Memory         struct {
 		MaxBytes Bytes `yaml:"max_bytes"`
 	} `yaml:"memory"`
+	Disk struct {
+		Dir      string `yaml:"dir"`
+		MaxBytes Bytes  `yaml:"max_bytes"`
+	} `yaml:"disk"`
 }
 
 type RouteConfig struct {
@@ -139,6 +143,9 @@ func (c *Config) defaults() {
 	if c.Cache.Memory.MaxBytes == 0 {
 		c.Cache.Memory.MaxBytes = Bytes(512 << 20) // 512 MiB
 	}
+	if c.Cache.Disk.Dir != "" && c.Cache.Disk.MaxBytes == 0 {
+		c.Cache.Disk.MaxBytes = Bytes(20 << 30) // 20 GiB
+	}
 	for i := range c.Routes {
 		r := &c.Routes[i]
 		if r.Upstream.Method == "" {
@@ -170,8 +177,14 @@ func (c *Config) validate() error {
 		if len(r.Pipeline) == 0 {
 			return fmt.Errorf("route %s: pipeline must have at least one stage", r.Path)
 		}
-		if r.Cache.Backend != "memory" {
-			return fmt.Errorf("route %s: unsupported cache backend %q (only 'memory' in this build)", r.Path, r.Cache.Backend)
+		switch r.Cache.Backend {
+		case "memory":
+		case "disk":
+			if c.Cache.Disk.Dir == "" {
+				return fmt.Errorf("route %s: cache.disk.dir is required for the disk backend", r.Path)
+			}
+		default:
+			return fmt.Errorf("route %s: unsupported cache backend %q (memory, disk)", r.Path, r.Cache.Backend)
 		}
 	}
 	return nil

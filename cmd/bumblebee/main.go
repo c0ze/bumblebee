@@ -17,6 +17,7 @@ import (
 	_ "github.com/c0ze/bumblebee/transform/image"
 	_ "github.com/c0ze/bumblebee/transform/lame"
 	_ "github.com/c0ze/bumblebee/transform/passthrough"
+	_ "github.com/c0ze/bumblebee/transform/video"
 )
 
 var version = "v0.0.0"

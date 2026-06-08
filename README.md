@@ -28,7 +28,7 @@ Each route in the config declares:
   route, selected headers/query params, the effective transform params, and the
   request body;
 - a **transform pipeline** — an ordered list of steps (`passthrough`, `lame`
-  (PCM→MP3, audio), and `image` (resize/recompress); `video` next), each tunable
+  (PCM→MP3, audio), `image` (resize/recompress), and `video` (ffmpeg)), each tunable
   per request.
 
 ### Race-free by construction
@@ -99,6 +99,11 @@ transformers are pure-Go. To build with audio support:
 - **Debian/Ubuntu:** `apt-get install -y libmp3lame-dev` (standard paths)
 
 Then build with `CGO_ENABLED=1`.
+
+The `video` transformer requires **ffmpeg** at runtime (`brew install ffmpeg` /
+`apt-get install ffmpeg`). Disk-backed routes (`cache.backend: disk`) stream
+large outputs through temp files instead of buffering them in memory.
+Currently `/stats` and `/cache/purge` operate on the in-memory cache only.
 
 ## License
 
