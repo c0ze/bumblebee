@@ -59,3 +59,17 @@ func TestVideoTranscode(t *testing.T) {
 		t.Fatalf("output does not look like mp4: % x", out.Bytes()[:min(16, out.Len())])
 	}
 }
+
+func TestVideoRejectsScaleInjection(t *testing.T) {
+	p, err := transform.Build([]transform.Stage{
+		{Type: "video", Params: transform.Params{"format": "mp4", "scale": "640:-2,movie=/etc/passwd[out]"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = p.Run(context.Background(), bytes.NewReader([]byte("not-a-real-video")), &bytes.Buffer{},
+		p.Resolve(func(string) (string, bool) { return "", false }))
+	if err == nil {
+		t.Fatal("expected error: malicious scale value must be rejected before ffmpeg runs")
+	}
+}

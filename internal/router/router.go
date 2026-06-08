@@ -268,6 +268,7 @@ type statsResp struct {
 }
 
 func (s *server) handleStats(w http.ResponseWriter, _ *http.Request) {
+	// NOTE: stats currently reflect the in-memory cache only (disk-store stats are a later plan).
 	resp := statsResp{
 		BuildVersion: s.version,
 		Cache:        s.mem.Snapshot(),

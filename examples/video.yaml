@@ -3,7 +3,7 @@ server:
 cache:
   default_backend: memory
   memory: { max_bytes: 256MB }
-  disk: { dir: /var/cache/bumblebee, max_bytes: 20GB }
+  disk: { dir: ./.bumblebee-cache, max_bytes: 20GB }
 routes:
   - path: /video/*
     upstream:

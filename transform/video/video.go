@@ -10,8 +10,16 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 
 	"github.com/c0ze/bumblebee/transform"
+)
+
+var (
+	reScale   = regexp.MustCompile(`^-?\d+:-?\d+$`) // width:height (either may be -1/-2 to keep aspect)
+	reCodec   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+	rePreset  = regexp.MustCompile(`^[A-Za-z0-9]+$`)
+	reBitrate = regexp.MustCompile(`^\d+[kKmM]?$`)
 )
 
 func init() { transform.Register("video", New) }
@@ -43,18 +51,30 @@ func (videoT) Transform(ctx context.Context, in io.Reader, out io.Writer, p tran
 
 	args := []string{"-y", "-i", inF.Name()}
 	if codec := p.String("codec", ""); codec != "" {
+		if !reCodec.MatchString(codec) {
+			return "", fmt.Errorf("invalid codec %q", codec)
+		}
 		args = append(args, "-c:v", codec)
 	}
 	if crf := p.Int("crf", -1); crf >= 0 {
 		args = append(args, "-crf", fmt.Sprintf("%d", crf))
 	}
 	if preset := p.String("preset", ""); preset != "" {
+		if !rePreset.MatchString(preset) {
+			return "", fmt.Errorf("invalid preset %q", preset)
+		}
 		args = append(args, "-preset", preset)
 	}
 	if bitrate := p.String("bitrate", ""); bitrate != "" {
+		if !reBitrate.MatchString(bitrate) {
+			return "", fmt.Errorf("invalid bitrate %q", bitrate)
+		}
 		args = append(args, "-b:v", bitrate)
 	}
 	if scale := p.String("scale", ""); scale != "" {
+		if !reScale.MatchString(scale) {
+			return "", fmt.Errorf("invalid scale %q; expected width:height (e.g. 640:-2)", scale)
+		}
 		args = append(args, "-vf", "scale="+scale)
 	}
 	args = append(args, "-f", format, outPath)
