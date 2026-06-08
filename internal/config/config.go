@@ -100,6 +100,10 @@ type UpstreamConfig struct {
 	Timeout        Duration `yaml:"timeout"`
 	Retries        int      `yaml:"retries"`
 	MaxInflight    int      `yaml:"max_inflight"`
+	Health         struct {
+		FailThreshold int      `yaml:"fail_threshold"`
+		Cooldown      Duration `yaml:"cooldown"`
+	} `yaml:"health"`
 }
 
 type RouteCache struct {

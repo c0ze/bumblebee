@@ -99,7 +99,7 @@ func New(cfg *config.Config, version string) (http.Handler, func(), error) {
 			keyHeaders:  rc.Cache.KeyHeaders,
 			keyQuery:    rc.Cache.KeyQuery,
 			ttl:         time.Duration(rc.Cache.TTL),
-			pool:        upstream.New(rc.Path, rc.Upstream.Pool, time.Duration(rc.Upstream.Timeout), rc.Upstream.Retries, rc.Upstream.MaxInflight),
+			pool:        upstream.New(rc.Path, rc.Upstream.Pool, time.Duration(rc.Upstream.Timeout), rc.Upstream.Retries, rc.Upstream.MaxInflight, rc.Upstream.Health.FailThreshold, time.Duration(rc.Upstream.Health.Cooldown)),
 			pipeline:    pipe,
 			store:       store,
 			streaming:   streaming,

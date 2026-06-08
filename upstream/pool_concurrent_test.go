@@ -23,7 +23,7 @@ func TestConcurrentDoNoRace(t *testing.T) {
 
 	// retries=1 so the retry-next path (which re-dispatches inside the owner) is
 	// also exercised concurrently when a request happens to fail.
-	p := upstream.New("t", []string{a.URL, b.URL}, 2*time.Second, 1, 0)
+	p := upstream.New("t", []string{a.URL, b.URL}, 2*time.Second, 1, 0, 0, 0)
 	defer p.Close()
 
 	var wg sync.WaitGroup
